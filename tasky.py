@@ -530,7 +530,7 @@ def main(args):
     else:
         readLoop(args)
     put_data()
-    sys.exit(True)
+    sys.exit(0)
 
 if __name__ == '__main__':
     authenticate()
