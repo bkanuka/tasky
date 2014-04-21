@@ -24,7 +24,6 @@ from oauth2client.tools import run
 import datetime as dt
 import httplib2
 import os
-import shlex
 import sys
 import time
 # import json # TODO
@@ -378,8 +377,6 @@ def handle_input_args(args, atasklistID=0):
             print_all_tasks(tasklistID)
     elif action is 'l' and args['summary'] is True:
         print_summary()
-    elif action is 'i':
-        readLoop(args, atasklistID)
     else:
         print_all_tasks(tasklistID)
 
@@ -387,72 +384,69 @@ def parse_arguments(args):
     parser = ArgumentParser(description = """A Google Tasks Client.
     Type tasky <argument> -h for more detailed information.""")
 
-    # Parse arguments
-    if len(args) > 1:
-        subparsers = parser.add_subparsers(dest = 'action')
-        parser.add_argument('-l', '--list',
-                default = 0,
-                help = 'Specifies task list (default: 0)')
+    subparsers = parser.add_subparsers(dest = 'action')
+    parser.add_argument('-l', '--list',
+            default = 0,
+            help = 'Specifies task list (default: 0)')
 
-        parser_a = subparsers.add_parser('a')
-        parser_a.add_argument('title', nargs = '*',
-                help = 'The name of the task.')
-        parser_a.add_argument('-d', '--date', nargs = 1,
-                help = 'A date in MM/DD/YYYY format.')
-        parser_a.add_argument('-n', '--note', nargs = 1,
-                help = 'Any quotation-enclosed string.')
-        parser_a.add_argument('-p', '--parent', nargs = 1,
-                help = 'The id of the parent task.')
+    parser_a = subparsers.add_parser('a')
+    parser_a.add_argument('title', nargs = '*',
+            help = 'The name of the task.')
+    parser_a.add_argument('-d', '--date', nargs = 1,
+            help = 'A date in MM/DD/YYYY format.')
+    parser_a.add_argument('-n', '--note', nargs = 1,
+            help = 'Any quotation-enclosed string.')
+    parser_a.add_argument('-p', '--parent', nargs = 1,
+            help = 'The id of the parent task.')
 
-        parser_e = subparsers.add_parser('e')
-        parser_e.add_argument('index', nargs = 1,
-                help = 'Index of the task to edit.')
-        parser_e.add_argument('-t', '--title', nargs = 1,
-                help = 'The new title after editing.')
-        parser_e.add_argument('-d', '--date', nargs = 1,
-                help = 'A new date in MM/DD/YYYY format.')
-        parser_e.add_argument('-n', '--note', nargs = 1,
-                help = 'The new note after editing.')
+    parser_e = subparsers.add_parser('e')
+    parser_e.add_argument('index', nargs = 1,
+            help = 'Index of the task to edit.')
+    parser_e.add_argument('-t', '--title', nargs = 1,
+            help = 'The new title after editing.')
+    parser_e.add_argument('-d', '--date', nargs = 1,
+            help = 'A new date in MM/DD/YYYY format.')
+    parser_e.add_argument('-n', '--note', nargs = 1,
+            help = 'The new note after editing.')
 
-        parser_m = subparsers.add_parser('m')
-        parser_m.add_argument('index', nargs = 1,
-                help = 'Index of the task to move.')
-        parser_m.add_argument('-a', '--after', 
-                nargs = 1, default = -1,
-                help = 'Move the task after this index. (default: -1)')
-        parser_m.add_argument('-p', '--parent',
-                nargs = 1,
-                help = 'Make the task a child of this index.')
+    parser_m = subparsers.add_parser('m')
+    parser_m.add_argument('index', nargs = 1,
+            help = 'Index of the task to move.')
+    parser_m.add_argument('-a', '--after', 
+            nargs = 1, default = -1,
+            help = 'Move the task after this index. (default: -1)')
+    parser_m.add_argument('-p', '--parent',
+            nargs = 1,
+            help = 'Make the task a child of this index.')
 
-        parser_c = subparsers.add_parser('c')
-        parser_c.add_argument('-a', '--all',
-                action='store_true',
-                help = 'Remove all tasks, completed or not.')
+    parser_c = subparsers.add_parser('c')
+    parser_c.add_argument('-a', '--all',
+            action='store_true',
+            help = 'Remove all tasks, completed or not.')
 
-        subparsers.add_parser('d')
-        subparsers.add_parser('i')
+    subparsers.add_parser('d')
 
-        parser_n = subparsers.add_parser('n')
-        parser_n.add_argument('title', nargs='*',
-                help = 'The name of the new task list.')
-        parser_n.add_argument('-r', '--rename', action='store_true',
-                help = 'Set if renaming an already existing task list.')
+    parser_n = subparsers.add_parser('n')
+    parser_n.add_argument('title', nargs='*',
+            help = 'The name of the new task list.')
+    parser_n.add_argument('-r', '--rename', action='store_true',
+            help = 'Set if renaming an already existing task list.')
 
-        parser_l = subparsers.add_parser('l')
-        parser_l.add_argument('-a', '--all', action='store_true',
-                help = 'Print all tasks in all task lists.')
-        parser_l.add_argument('-s', '--summary', action='store_true',
-                help = 'Print a summary of available task lists.')
+    parser_l = subparsers.add_parser('l')
+    parser_l.add_argument('-a', '--all', action='store_true',
+            help = 'Print all tasks in all task lists.')
+    parser_l.add_argument('-s', '--summary', action='store_true',
+            help = 'Print a summary of available task lists.')
 
-        parser_r = subparsers.add_parser('r')
-        parser_r.add_argument('index', nargs = '*',
-                help = 'Index of the task to remove.')
+    parser_r = subparsers.add_parser('r')
+    parser_r.add_argument('index', nargs = '*',
+            help = 'Index of the task to remove.')
 
-        parser_t = subparsers.add_parser('t')
-        parser_t.add_argument('index', nargs = '*',
-                help = 'Index of the task to toggle.')
-    sys.argv = args
-    return vars(parser.parse_args())
+    parser_t = subparsers.add_parser('t')
+    parser_t.add_argument('index', nargs = '*',
+            help = 'Index of the task to toggle.')
+
+    return vars(parser.parse_args(args))
 
 class Auth():
     def __init__(self, key_file):
@@ -511,27 +505,22 @@ def authenticate():
     service = build(serviceName='tasks', version='v1', http=http,
         developerKey=f.get_API_key())
 
-def readLoop(args, tasklistID=0):
+def interactiveLoop():
      while True:
-        readIn = raw_input(USAGE)
-        if readIn is '' or readIn is 'q':
-            break
-        args = shlex.split(readIn)
-        args[:0] = '/'
+        readIn = raw_input("tasks> ")
+        args = readIn.split()
         args = parse_arguments(args)
-        handle_input_args(args, tasklistID)
-
-
-def main(args):
-    get_data()
-
-    if len(args) > 1:
         handle_input_args(args)
-    else:
-        readLoop(args)
-    put_data()
-    sys.exit(0)
+
 
 if __name__ == '__main__':
     authenticate()
-    main(parse_arguments(sys.argv))
+    get_data()
+    try:
+        if len(sys.argv) == 1:
+            interactiveLoop()
+        else:
+            args = parse_arguments(sys.argv)
+            handle_input_args(args)
+    except SystemExit:
+        put_data()
