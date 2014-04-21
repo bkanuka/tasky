@@ -381,6 +381,20 @@ def handle_input_args(args, atasklistID=0):
         print_all_tasks(tasklistID)
 
 def parse_arguments(args):
+    short_form = {
+            'a': 'add',
+            'c': 'clear',
+            'd': 'delete',
+            'e': 'edit',
+            'r': 'remove',
+            'l': 'list',
+            'm': 'move',
+            'n': 'new',
+            't': 'toggle',
+            'q': 'quit',
+            }
+    args[1] = short_form.get(args[1], default=args[1])
+
     parser = ArgumentParser(description = """A Google Tasks Client.
     Type tasky <argument> -h for more detailed information.""")
 
@@ -389,61 +403,61 @@ def parse_arguments(args):
             default = 0,
             help = 'Specifies task list (default: 0)')
 
-    parser_a = subparsers.add_parser('a')
-    parser_a.add_argument('title', nargs = '*',
+    parser_add = subparsers.add_parser('add')
+    parser_add.add_argument('title', nargs = '*',
             help = 'The name of the task.')
-    parser_a.add_argument('-d', '--date', nargs = 1,
+    parser_add.add_argument('-d', '--date', nargs = 1,
             help = 'A date in MM/DD/YYYY format.')
-    parser_a.add_argument('-n', '--note', nargs = 1,
+    parser_add.add_argument('-n', '--note', nargs = 1,
             help = 'Any quotation-enclosed string.')
-    parser_a.add_argument('-p', '--parent', nargs = 1,
+    parser_add.add_argument('-p', '--parent', nargs = 1,
             help = 'The id of the parent task.')
 
-    parser_e = subparsers.add_parser('e')
-    parser_e.add_argument('index', nargs = 1,
+    parser_edit = subparsers.add_parser('edit')
+    parser_edit.add_argument('index', nargs = 1,
             help = 'Index of the task to edit.')
-    parser_e.add_argument('-t', '--title', nargs = 1,
+    parser_edit.add_argument('-t', '--title', nargs = 1,
             help = 'The new title after editing.')
-    parser_e.add_argument('-d', '--date', nargs = 1,
+    parser_edit.add_argument('-d', '--date', nargs = 1,
             help = 'A new date in MM/DD/YYYY format.')
-    parser_e.add_argument('-n', '--note', nargs = 1,
+    parser_edit.add_argument('-n', '--note', nargs = 1,
             help = 'The new note after editing.')
 
-    parser_m = subparsers.add_parser('m')
-    parser_m.add_argument('index', nargs = 1,
+    parser_move = subparsers.add_parser('move')
+    parser_move.add_argument('index', nargs = 1,
             help = 'Index of the task to move.')
-    parser_m.add_argument('-a', '--after', 
+    parser_move.add_argument('-a', '--after', 
             nargs = 1, default = -1,
             help = 'Move the task after this index. (default: -1)')
-    parser_m.add_argument('-p', '--parent',
+    parser_move.add_argument('-p', '--parent',
             nargs = 1,
             help = 'Make the task a child of this index.')
 
-    parser_c = subparsers.add_parser('c')
-    parser_c.add_argument('-a', '--all',
+    parser_clear = subparsers.add_parser('clear')
+    parser_clear.add_argument('-a', '--all',
             action='store_true',
             help = 'Remove all tasks, completed or not.')
 
-    subparsers.add_parser('d')
+    subparsers.add_parser('delete')
 
-    parser_n = subparsers.add_parser('n')
-    parser_n.add_argument('title', nargs='*',
+    parser_new = subparsers.add_parser('new')
+    parser_new.add_argument('title', nargs='*',
             help = 'The name of the new task list.')
-    parser_n.add_argument('-r', '--rename', action='store_true',
+    parser_new.add_argument('-r', '--rename', action='store_true',
             help = 'Set if renaming an already existing task list.')
 
-    parser_l = subparsers.add_parser('l')
-    parser_l.add_argument('-a', '--all', action='store_true',
+    parser_list = subparsers.add_parser('list')
+    parser_list.add_argument('-a', '--all', action='store_true',
             help = 'Print all tasks in all task lists.')
-    parser_l.add_argument('-s', '--summary', action='store_true',
+    parser_list.add_argument('-s', '--summary', action='store_true',
             help = 'Print a summary of available task lists.')
 
-    parser_r = subparsers.add_parser('r')
-    parser_r.add_argument('index', nargs = '*',
+    parser_remove = subparsers.add_parser('remove')
+    parser_remove.add_argument('index', nargs = '*',
             help = 'Index of the task to remove.')
 
-    parser_t = subparsers.add_parser('t')
-    parser_t.add_argument('index', nargs = '*',
+    parser_toggle = subparsers.add_parser('toggle')
+    parser_toggle.add_argument('index', nargs = '*',
             help = 'Index of the task to toggle.')
 
     return vars(parser.parse_args(args))
@@ -506,7 +520,7 @@ def authenticate():
         developerKey=f.get_API_key())
 
 def interactiveLoop():
-     while True:
+    while True:
         readIn = raw_input("tasks> ")
         args = readIn.split()
         args = parse_arguments(args)
@@ -516,11 +530,12 @@ def interactiveLoop():
 if __name__ == '__main__':
     authenticate()
     get_data()
-    try:
-        if len(sys.argv) == 1:
-            interactiveLoop()
-        else:
-            args = parse_arguments(sys.argv)
-            handle_input_args(args)
-    except SystemExit:
-        put_data()
+
+    import atexit
+    atexit.register(put_data)
+
+    if len(sys.argv) == 1:
+        interactiveLoop()
+    else:
+        args = parse_arguments(sys.argv)
+        handle_input_args(args)
