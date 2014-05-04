@@ -28,76 +28,6 @@ import sys
 import time
 # import json # TODO
 
-USAGE = """[a]dd, [c]lear, [d]elete, [e]dit, [r]emove task,
-[l]ist, [m]ove, [n]ew list/re[n]ame, [t]oggle, [q]uit: """
-
-tasky_dir = os.path.join(os.environ['HOME'], '.tasky')
-KEYS_FILE = os.path.join(tasky_dir, 'keys.txt')
-service = None
-TaskLists = OrderedDict()
-IDToTitle = OrderedDict()
-UNCHANGED = 0
-MODIFIED = 1
-DELETED = 2
-
-def add_task(listIndex, task):
-    global TaskLists
-
-    tasklist = TaskLists[TaskLists.keys()[listIndex]]
-    if 'parent' in task:
-        parent = tasklist.keys()[task['parent']]
-        newTask = service.tasks().insert(
-                tasklist = TaskLists.keys()[listIndex],
-                parent = parent,
-                body = task,
-                ).execute()
-        # Re-insert the new task in order
-        newDict = OrderedDict()
-        for tt in tasklist:
-            newDict[tt] = tasklist[tt]
-            if tt is parent:
-                newDict[newTask['id']] = newTask
-    else:
-        newTask = service.tasks().insert(
-                tasklist = TaskLists.keys()[listIndex],
-                body = task,
-                ).execute()
-        newDict = OrderedDict()
-        newDict[newTask['id']] = newTask
-        for tt in tasklist:
-            newDict[tt] = tasklist[tt]
-
-    # Update records
-    TaskLists[TaskLists.keys()[listIndex]] = newDict
-    IDToTitle[newTask['id']] = newTask['title']
-    newTask['modified'] = UNCHANGED
-
-def move_task(listIndex, task, args):
-    tasklistIndex = TaskLists.keys()[listIndex]
-    tasklist = TaskLists[tasklistIndex]
-    after = None
-    parent = None
-
-    if (args['after'] is not None and 
-            args['after'] != -1 and 
-            int(args['after'][0]) != -1):
-        after = tasklist.keys()[int(args['after'][0])]
-
-    if args['parent'] is not None:
-        parent = tasklist.keys()[int(args['parent'][0])]
-    elif 'parent' in task:
-        parent = task['parent']
-
-    newTask = service.tasks().move(
-            tasklist = tasklistIndex,
-            task = task['id'], parent = ''.join(parent),
-            previous = ''.join(after),
-            body = task,
-            ).execute()
-    # del TaskLists[tasklistIndex][task['id']]
-    # tasklist[newTask['id']] = newTask
-    # IDToTitle[newTask['id']] = newTask['title']
-    # newTask['modified'] = UNCHANGED
 
 def remove_task(listIndex, task):
     tasklist = TaskLists[TaskLists.keys()[listIndex]]
@@ -216,7 +146,6 @@ def print_all_tasks(tasklistID):
     # Print task name
     if len(TaskLists[tasklistID]) == 0:
         print(IDToTitle[tasklistID], '(empty)')
-        sys.exit(False)
     else:
         print(IDToTitle[tasklistID])
 
@@ -266,7 +195,6 @@ def print_summary():
                 '(', len(TaskLists[tasklistID]), ')')
 
 def handle_input_args(args, atasklistID=0):
-    action = ''.join(args['action'])
     args['list'] = int(args['list'])
     if atasklistID == 0:
         atasklistID = args['list']
@@ -381,24 +309,28 @@ def handle_input_args(args, atasklistID=0):
         print_all_tasks(tasklistID)
 
 def parse_arguments(args):
-    short_form = {
+    # TODO move alias to config file (YAML?)
+    alias = {
             'a': 'add',
             'c': 'clear',
             'd': 'delete',
             'e': 'edit',
             'r': 'remove',
+            'rm': 'remove',
             'l': 'list',
+            'ls': 'list',
             'm': 'move',
             'n': 'new',
             't': 'toggle',
             'q': 'quit',
+            'exit': 'quit',
             }
-    args[1] = short_form.get(args[1], default=args[1])
+    args[0] = alias.get(args[0], args[0])
 
-    parser = ArgumentParser(description = """A Google Tasks Client.
-    Type tasky <argument> -h for more detailed information.""")
+    parser = ArgumentParser(description = "A Google Tasks Client.
+    Type tasky <argument> -h for more detailed information.")
 
-    subparsers = parser.add_subparsers(dest = 'action')
+    subparsers = parser.add_subparsers(dest = 'subcommand')
     parser.add_argument('-l', '--list',
             default = 0,
             help = 'Specifies task list (default: 0)')
@@ -460,64 +392,137 @@ def parse_arguments(args):
     parser_toggle.add_argument('index', nargs = '*',
             help = 'Index of the task to toggle.')
 
-    return vars(parser.parse_args(args))
+    # TODO
+    # run func provided by subparser
+    # return t.get_name(t.current_tasklist_id)
 
-class Auth():
-    def __init__(self, key_file):
-        try:
-            with open(key_file, 'r') as self.f:
-                self.clientid = self.f.readline()
-                self.clientsecret = self.f.readline()
-                self.apikey = self.f.readline()
-        except IOError:
-            self.clientid = raw_input("Enter your clientID: ")
-            self.clientsecret = raw_input("Enter your client secret: ")
-            self.apikey = raw_input("Enter your API key: ")
-            self.write_auth()
+    print(vars(parser.parse_args(args)))
+    return parser.parse_args(args)
 
-    def write_auth(self):
-        if not os.path.exists(tasky_dir):
-            os.makedirs(tasky_dir)
-        with open(KEYS_FILE, 'w') as self.auth:
-            self.auth.write(str(self.clientid) + '\n')
-            self.auth.write(str(self.clientsecret) + '\n')
-            self.auth.write(str(self.apikey) + '\n')
+class Tasks():
+    def __init__(self):
+        #TODO self._configure()
+        self.conf = {'keyfile': '~/.tasky/dev_keys',
+                'confdir': '~/.tasky',
+                }
+        self._authenticate()
 
-    def get_client_ID(self):
-        return self.clientid
+    def _authenticate(self):
+        # If credentials don't exist or are invalid, run through the native client
+        # flow. The Storage object will ensure that if successful the good
+        # Credentials will get written back to a file.
+        storage = Storage(os.path.join(self.conf['confdir'], 'token'))
+        credentials = storage.get()
 
-    def get_client_secret(self):
-        return self.clientsecret
+        if credentials is None or credentials.invalid:
+            # try to get dev keys on file
+            try:
+                with open(self.conf['keyfile'], 'r') as keyfile:
+                    client_id = keyfile.readline()
+                    client_secret = keyfile.readline()
+                    api_key = keyfile.readline()
+            except IOError:
+                # File doesn't exist, so prompt for them
+                # and then create the file
+                print("Google credentials not found")
+                client_id = raw_input("Enter your clientID: ")
+                client_secret = raw_input("Enter your client secret: ")
+                api_key = raw_input("Enter your API key: ")
 
-    def get_API_key(self):
-        return self.apikey
+                if not os.path.exists(self.conf['confdir']):
+                    os.makedirs(self.conf['confdir'])
+                with open(self.conf['keyfile'], 'w') as keyfile:
+                    keyfile.write(str(client_id) + '\n')
+                    keyfile.write(str(client_secret) + '\n')
+                    keyfile.write(str(api_key) + '\n')
 
-def authenticate():
-    global service
-    f = Auth(KEYS_FILE)
+            # OAuth 2.0 Authentication
+            FLOW = OAuth2WebServerFlow(
+                client_id=client_id,
+                client_secret=client_secret,
+                scope='https://www.googleapis.com/auth/tasks',
+                user_agent='Tasky/v1')
 
-    # OAuth 2.0 Authentication
-    FLOW = OAuth2WebServerFlow(
-        client_id=f.get_client_ID(),
-        client_secret=f.get_client_secret(),
-        scope='https://www.googleapis.com/auth/tasks',
-        user_agent='Tasky/v1')
+            credentials = run(FLOW, storage)
 
-    # If credentials don't exist or are invalid, run through the native client
-    # flow. The Storage object will ensure that if successful the good
-    # Credentials will get written back to a file.
-    storage = Storage(os.path.join(tasky_dir, 'tasks.dat'))
-    credentials = storage.get()
+        http = httplib2.Http()
+        http = credentials.authorize(http)
 
-    if credentials is None or credentials.invalid:
-        credentials = run(FLOW, storage)
+        # The main Tasks API object
+        self.api = build(serviceName='tasks', 
+                version='v1',
+                http=http,
+                developerKey=api_key)
 
-    http = httplib2.Http()
-    http = credentials.authorize(http)
+    def add(self, **kargs):
+        #TODO allow change tasklist
 
-    # The main Tasks API object
-    service = build(serviceName='tasks', version='v1', http=http,
-        developerKey=f.get_API_key())
+        # self.tasklists should be an ordered dict with
+        # google id's as keys
+        current_tasklist = self.taskslists[self.current_tasklist_id]
+
+        new_task = {'tasklist': self.current_tasklist_id,
+                'title': kargs['title'],
+                }
+
+        if 'due' in kargs:
+            #TODO take any date format
+            d = time.strptime(kargs['due'], "%m/%d/%y")
+            #TODO use datetime libs to do this
+            new_task['due'] = (
+                    str(d.tm_year) + '-' + 
+                    str(d.tm_mon) + '-' + 
+                    str(d.tm_mday) + 
+                    'T12:00:00.000Z')
+
+        if 'note' in kargs:
+            new_task['notes'] = kargs['note']
+
+        if 'parent' in kargs:
+            # TODO: try:
+            # task['parent'] = int(arg.parent)
+            # except:
+            # task['parent'] = self.get_list_id(args.parent)
+            parent_int = int(kargs['parent'])
+            parent_id = current_tasklist.keys()[parent_int]
+            new_task['parent'] = parent_id
+
+        reply = self.api.tasks().insert(**new_task).execute()
+
+        # Re-insert the new task in order
+        new_tasklist = OrderedDict()
+        for t in current_tasklist:
+            new_tasklist[t] = current_tasklist[t]
+            if t['id'] == parent_id:
+                new_tasklist[reply['id']] = reply
+
+        # Update records
+        self.tasklists[self.current_tasklist_id] = new_tasklist
+
+    def move(self, **kargs):
+        # TODO allow moving to different tasklist
+
+        current_tasklist = self.taskslists[self.current_tasklist_id]
+        task_id = current_tasklist.keys()[int(kargs.get('task', 0))]
+        api_args = {'tasklist': self.current_tasklist_id,
+                'task': task_id,
+                }
+
+        # TODO allow many ways to spec position
+        pos = int(kargs.get('pos', 0))
+        parent = int(kargs.get('parent', 0))
+
+        if pos:
+            api_args['previous'] = current_tasklist.keys()[pos-1]
+
+        if parent:
+            api_args['parent'] = current_tasklist.keys()[parent]
+
+        newTask = service.tasks().move(**api_args).execute()
+        # del TaskLists[tasklistIndex][task['id']]
+        # tasklist[newTask['id']] = newTask
+        # IDToTitle[newTask['id']] = newTask['title']
+        # newTask['modified'] = UNCHANGED
 
 def interactiveLoop():
     while True:
@@ -537,5 +542,5 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         interactiveLoop()
     else:
-        args = parse_arguments(sys.argv)
+        args = parse_arguments(sys.argv[1:])
         handle_input_args(args)
