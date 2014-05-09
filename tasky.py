@@ -22,6 +22,7 @@ from oauth2client.file import Storage
 from oauth2client.tools import run
 
 import datetime as dt
+from dateutil.parser import parse as dt_parse
 import httplib2
 import os
 import sys
@@ -77,35 +78,60 @@ def toggle_task(listIndex, task):
             tasklist[t['id']] = t
 
 def get_data():
-    global TaskLists
-    # Only retrieve data once per run
-    if TaskLists != {}:
-        return
+    self.tasklists = {}
 
     # Fetch task lists
-    tasklists = service.tasklists().list().execute()
+    raw_tasklists = service.tasklists().list().execute()
 
     # No task lists
     if 'items' not in tasklists:
         return
 
     # Over all task lists
-    for tasklist in tasklists['items']:
-        # Handle repeats
-        if tasklist['title'] in IDToTitle:
-            continue
-        IDToTitle[tasklist['id']] = tasklist['title']
-        TaskLists[tasklist['id']] = OrderedDict()
-        tasks = service.tasks().list(tasklist = tasklist['id']).execute()
+    for item in raw_tasklists['items']:
+        current_tasklist_id = item['id']
+        current_tasklist = self.tasklists.get(self.tasklist[current_tasklist_id], OrderedDict())
+        raw_tasks = service.tasks().list(tasklist = current_tasklist_id).execute()
         # No task in current list
         if 'items' not in tasks:
             continue
         # Over all tasks in a given list
-        for task in tasks['items']:
-            IDToTitle[task['id']] = task['title']
-            # Set everything to be initially unmodified
-            task['modified'] = UNCHANGED
-            TaskLists[tasklist['id']][task['id']] = task
+        for task in raw_tasks['items']:
+            if 'parent' in task:
+                # find task by id
+                current_tasklist[task.parent]
+            current_tasklist.append(task)
+
+        self.tasklist[current_tasklist['id']] = current_tasklist
+
+class Task():
+    def __init__(self, raw_task):
+        self.completed = (raw_task['status'] == 'completed')
+        self.parent = raw_task.get('parent', None)
+        self.links = raw_task.get('links', [])
+        self.title = raw_task['title']
+        self.deleted = bool(raw_task.get('deleted', False))
+        try:
+            self.completed_date = dt_parse(raw_task['completed'])
+        except KeyError:
+            self.completed_date = None
+        try:
+            self.updated = dt_parse(raw_task['updated'])
+        except KeyError:
+            self.updated = None
+        try:
+            self.due = dt_parse(raw_task['due'])
+        except KeyError:
+            self.due = None
+        self.id = raw_task['id']
+        self.posistion = raw_task['position']
+        self.hidden = bool(raw_task.get('hidden', False))
+        self.notes = raw_task.get('notes', None)
+        self.url = raw_task['selfLink']
+
+        self.children = []
+
+
 
 def put_data():
     # Nothing to write home about
@@ -458,6 +484,7 @@ class Tasks():
         #TODO allow change tasklist
 
         # self.tasklists should be an ordered dict with
+        # TODO why ordered??
         # google id's as keys
         current_tasklist = self.taskslists[self.current_tasklist_id]
 
@@ -525,6 +552,7 @@ class Tasks():
         # newTask['modified'] = UNCHANGED
 
 def interactiveLoop():
+    # TODO handle certain exceptions like Keyboard
     while True:
         readIn = raw_input("tasks> ")
         args = readIn.split()
