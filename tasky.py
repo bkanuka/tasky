@@ -84,27 +84,48 @@ def get_data():
     raw_tasklists = service.tasklists().list().execute()
 
     # No task lists
-    if 'items' not in tasklists:
+    if 'items' not in raw_tasklists:
         return
 
     # Over all task lists
-    for item in raw_tasklists['items']:
-        current_tasklist_id = item['id']
-        current_tasklist = self.tasklists.get(self.tasklist[current_tasklist_id], OrderedDict())
-        raw_tasks = service.tasks().list(tasklist = current_tasklist_id).execute()
+    for raw_tasklist in raw_tasklists['items']:
+        if raw_tasklist['id'] not in self.tasklists.keys():
+            self.tasklists[raw_tasklist['id']] = TaskList(raw_tasklist)
+        
+        tl = self.tasklists[raw_tasklist['id']]
+        raw_tasks = service.tasks().list(tasklist = tl.id).execute()
+
         # No task in current list
-        if 'items' not in tasks:
+        if 'items' not in raw_tasks:
             continue
         # Over all tasks in a given list
-        for task in raw_tasks['items']:
-            if 'parent' in task:
-                # find task by id
-                current_tasklist[task.parent]
-            current_tasklist.append(task)
+        for raw_task in raw_tasks['items']:
+            tl[raw_task['id']] = Task(raw_task)
 
         self.tasklist[current_tasklist['id']] = current_tasklist
 
-class Task():
+
+class TaskList(dict):
+    '''OrderedDict of tasks where key is task id, and value is a task'''
+    def __init__(self, raw_tasklist):
+        # Initialize OrderedDict
+        super(TaskList, self).__init__()
+
+        self.title = raw_tasklist('title', None)
+        self.id = raw_tasklist('id', None)
+        try:
+            self.updated = dt_parse(raw_tasklist['updated'])
+        except KeyError:
+            self.updated = None
+
+    def find_id(self, id):
+        for task_id, task in self.items():
+            if task_id == id:
+                return task
+            else:
+                task.children.find_id(id)
+
+class Task:
     def __init__(self, raw_task):
         self.completed = (raw_task['status'] == 'completed')
         self.parent = raw_task.get('parent', None)
@@ -129,9 +150,7 @@ class Task():
         self.notes = raw_task.get('notes', None)
         self.url = raw_task['selfLink']
 
-        self.children = []
-
-
+        self.children = TaskList()
 
 def put_data():
     # Nothing to write home about
