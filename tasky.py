@@ -30,100 +30,27 @@ import time
 # import json # TODO
 
 
-def remove_task(listIndex, task):
-    tasklist = TaskLists[TaskLists.keys()[listIndex]]
-
-    # If already deleted, do nothing
-    if task['modified'] is DELETED:
-        return
-    task['modified'] = DELETED
-    del IDToTitle[task['id']]
-
-    # Also delete all children of deleted tasks
-    for taskID in tasklist:
-        t = tasklist[taskID]
-        if ('parent' in t and 
-                t['parent'] in tasklist and 
-                tasklist[t['parent']]['modified'] is DELETED):
-            t['modified'] = DELETED
-            if t['id'] in IDToTitle:
-                del IDToTitle[t['id']]
-
-def toggle_task(listIndex, task):
-    tasklist = TaskLists[TaskLists.keys()[listIndex]]
-
-    if task['modified'] is DELETED:
-        return
-    task['modified'] = MODIFIED
-
-    if task['status'] == 'needsAction':
-        task['status'] = 'completed'
-    else:
-        task['status'] = 'needsAction'
-        if 'completed' in task:
-            del task['completed']
-
-    # Also toggle all children whose parents were toggled
-    toggle_tree = [task['id']]
-    for taskID in tasklist:
-        t = tasklist[taskID]
-        if t['status'] is DELETED:
-            continue
-        if 'parent' in t and t['parent'] in toggle_tree:
-            t['status'] = tasklist[t['parent']]['status']
-            if t['status'] == 'needsAction' and 'completed' in t:
-                del t['completed']
-            toggle_tree.append(t['id'])
-            t['modified'] = MODIFIED
-            tasklist[t['id']] = t
-
-def get_data():
-    self.tasklists = {}
-
-    # Fetch task lists
-    raw_tasklists = service.tasklists().list().execute()
-
-    # No task lists
-    if 'items' not in raw_tasklists:
-        return
-
-    # Over all task lists
-    for raw_tasklist in raw_tasklists['items']:
-        if raw_tasklist['id'] not in self.tasklists.keys():
-            self.tasklists[raw_tasklist['id']] = TaskList(raw_tasklist)
-        
-        tl = self.tasklists[raw_tasklist['id']]
-        raw_tasks = service.tasks().list(tasklist = tl.id).execute()
-
-        # No task in current list
-        if 'items' not in raw_tasks:
-            continue
-        # Over all tasks in a given list
-        for raw_task in raw_tasks['items']:
-            tl[raw_task['id']] = Task(raw_task)
-
-        self.tasklist[current_tasklist['id']] = current_tasklist
 
 
 class TaskList(dict):
-    '''OrderedDict of tasks where key is task id, and value is a task'''
-    def __init__(self, raw_tasklist):
-        # Initialize OrderedDict
+    '''Dict of tasks where key is task id, and value is a task'''
+    def __init__(self, raw_tasklist={}):
+        # Initialize Dict
         super(TaskList, self).__init__()
 
-        self.title = raw_tasklist('title', None)
-        self.id = raw_tasklist('id', None)
+        self.title = raw_tasklist.get('title', None)
+        self.id = raw_tasklist.get('id', None)
         try:
             self.updated = dt_parse(raw_tasklist['updated'])
         except KeyError:
             self.updated = None
 
-    def find_id(self, id):
+    def get_id(self, id):
         for task_id, task in self.items():
             if task_id == id:
                 return task
             else:
-                task.children.find_id(id)
+                task.children.get_id(id)
 
 class Task:
     def __init__(self, raw_task):
@@ -372,8 +299,10 @@ def parse_arguments(args):
             }
     args[0] = alias.get(args[0], args[0])
 
-    parser = ArgumentParser(description = "A Google Tasks Client.
-    Type tasky <argument> -h for more detailed information.")
+    parser = ArgumentParser(
+            description = "A Google Tasks Client. " +
+            "Type tasky <argument> -h for more detailed information."
+            )
 
     subparsers = parser.add_subparsers(dest = 'subcommand')
     parser.add_argument('-l', '--list',
@@ -456,48 +385,76 @@ class Tasks():
         # If credentials don't exist or are invalid, run through the native client
         # flow. The Storage object will ensure that if successful the good
         # Credentials will get written back to a file.
-        storage = Storage(os.path.join(self.conf['confdir'], 'token'))
-        credentials = storage.get()
+        try:
+            # TODO encrypt these
+            with open(self.conf['keyfile'], 'r') as keyfile:
+                self._client_id = keyfile.readline()
+                self._client_secret = keyfile.readline()
+                self._api_key = keyfile.readline()
+        except IOError:
+            # File doesn't exist, so prompt for them
+            # and then create the file
+            print("Google credentials not found")
+            client_id = raw_input("Enter your clientID: \n")
+            client_secret = raw_input("Enter your client secret: \n")
+            api_key = raw_input("Enter your API key: \n")
 
-        if credentials is None or credentials.invalid:
-            # try to get dev keys on file
-            try:
-                with open(self.conf['keyfile'], 'r') as keyfile:
-                    client_id = keyfile.readline()
-                    client_secret = keyfile.readline()
-                    api_key = keyfile.readline()
-            except IOError:
-                # File doesn't exist, so prompt for them
-                # and then create the file
-                print("Google credentials not found")
-                client_id = raw_input("Enter your clientID: ")
-                client_secret = raw_input("Enter your client secret: ")
-                api_key = raw_input("Enter your API key: ")
+            if not os.path.exists(self.conf['confdir']):
+                os.makedirs(self.conf['confdir'])
+            with open(self.conf['keyfile'], 'w') as keyfile:
+                keyfile.write(str(client_id) + '\n')
+                keyfile.write(str(client_secret) + '\n')
+                keyfile.write(str(api_key) + '\n')
 
-                if not os.path.exists(self.conf['confdir']):
-                    os.makedirs(self.conf['confdir'])
-                with open(self.conf['keyfile'], 'w') as keyfile:
-                    keyfile.write(str(client_id) + '\n')
-                    keyfile.write(str(client_secret) + '\n')
-                    keyfile.write(str(api_key) + '\n')
+        self._storage = Storage(os.path.join(self.conf['confdir'], 'token'))
+        self._credentials = self._storage.get()
 
+        if self._credentials is None or self._credentials.invalid:
             # OAuth 2.0 Authentication
             FLOW = OAuth2WebServerFlow(
-                client_id=client_id,
-                client_secret=client_secret,
+                client_id=self._client_id,
+                client_secret=self._client_secret,
                 scope='https://www.googleapis.com/auth/tasks',
                 user_agent='Tasky/v1')
 
-            credentials = run(FLOW, storage)
+            self._credentials = run(FLOW, storage)
 
         http = httplib2.Http()
-        http = credentials.authorize(http)
+        http = self._credentials.authorize(http)
 
         # The main Tasks API object
         self.api = build(serviceName='tasks', 
                 version='v1',
                 http=http,
-                developerKey=api_key)
+                developerKey=self._api_key)
+
+
+    def get_data(self):
+        self.tasklists = {}
+
+        # Fetch task lists
+        raw_tasklists = self.api.tasklists().list().execute()
+
+        # Over all task lists
+        for raw_tasklist in raw_tasklists.get('items', []):
+            if raw_tasklist['id'] not in self.tasklists.keys():
+                self.tasklists[raw_tasklist['id']] = TaskList(raw_tasklist)
+            
+            tl = self.tasklists[raw_tasklist['id']]
+            raw_tasks = self.api.tasks().list(tasklist = tl.id).execute()
+
+            # Over all tasks in a given list
+            for raw_task in raw_tasks.get('items', []):
+                tl[raw_task['id']] = Task(raw_task)
+
+        # Parent/children
+        for tl_id, tl in self.tasklists.items():
+            for t_id, t in tl.items():
+                if t.parent:
+                    p = tl.get_id(t.parent)
+                    p.children[t_id] = t
+                    del tl[t_id]
+
 
     def add(self, **kargs):
         #TODO allow change tasklist
