@@ -376,10 +376,12 @@ def parse_arguments(args):
 class Tasks():
     def __init__(self):
         #TODO self._configure()
-        self.conf = {'keyfile': '~/.tasky/dev_keys',
-                'confdir': '~/.tasky',
-                }
+        self.conf = {}
+        self.conf['confdir'] = os.path.join(os.path.expanduser('~'), '.tasky/')
+        self.conf['keyfile'] = os.path.join(self.conf['confdir'], 'dev_keys')
+        print(self.conf['keyfile'])
         self._authenticate()
+
 
     def _authenticate(self):
         # If credentials don't exist or are invalid, run through the native client
@@ -395,16 +397,16 @@ class Tasks():
             # File doesn't exist, so prompt for them
             # and then create the file
             print("Google credentials not found")
-            client_id = raw_input("Enter your clientID: \n")
-            client_secret = raw_input("Enter your client secret: \n")
-            api_key = raw_input("Enter your API key: \n")
+            self._client_id = raw_input("Enter your clientID: \n")
+            self._client_secret = raw_input("Enter your client secret: \n")
+            self._api_key = raw_input("Enter your API key: \n")
 
             if not os.path.exists(self.conf['confdir']):
                 os.makedirs(self.conf['confdir'])
             with open(self.conf['keyfile'], 'w') as keyfile:
-                keyfile.write(str(client_id) + '\n')
-                keyfile.write(str(client_secret) + '\n')
-                keyfile.write(str(api_key) + '\n')
+                keyfile.write(str(self._client_id) + '\n')
+                keyfile.write(str(self._client_secret) + '\n')
+                keyfile.write(str(self._api_key) + '\n')
 
         self._storage = Storage(os.path.join(self.conf['confdir'], 'token'))
         self._credentials = self._storage.get()
@@ -417,7 +419,7 @@ class Tasks():
                 scope='https://www.googleapis.com/auth/tasks',
                 user_agent='Tasky/v1')
 
-            self._credentials = run(FLOW, storage)
+            self._credentials = run(FLOW, self._storage)
 
         http = httplib2.Http()
         http = self._credentials.authorize(http)
