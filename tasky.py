@@ -280,7 +280,7 @@ def handle_input_args(args, atasklistID=0):
     else:
         print_all_tasks(tasklistID)
 
-def parse_arguments(args):
+def parse_arguments(t, args):
     # TODO move alias to config file (YAML?)
     alias = {
             'a': 'add',
@@ -318,6 +318,7 @@ def parse_arguments(args):
             help = 'Any quotation-enclosed string.')
     parser_add.add_argument('-p', '--parent', nargs = 1,
             help = 'The id of the parent task.')
+    parser_add.set_defaults(func=t.add)
 
     parser_edit = subparsers.add_parser('edit')
     parser_edit.add_argument('index', nargs = 1,
@@ -328,6 +329,7 @@ def parse_arguments(args):
             help = 'A new date in MM/DD/YYYY format.')
     parser_edit.add_argument('-n', '--note', nargs = 1,
             help = 'The new note after editing.')
+    parser_edit.set_defaults(func=t.edit)
 
     parser_move = subparsers.add_parser('move')
     parser_move.add_argument('index', nargs = 1,
@@ -338,19 +340,23 @@ def parse_arguments(args):
     parser_move.add_argument('-p', '--parent',
             nargs = 1,
             help = 'Make the task a child of this index.')
+    parser_move.set_defaults(func=t.move)
 
     parser_clear = subparsers.add_parser('clear')
     parser_clear.add_argument('-a', '--all',
             action='store_true',
             help = 'Remove all tasks, completed or not.')
+    parser_clear.set_defaults(func=t.clear)
 
-    subparsers.add_parser('delete')
+    parser_delete = subparsers.add_parser('delete')
+    parser_delete.set_defaults(func=t.delete)
 
     parser_new = subparsers.add_parser('new')
     parser_new.add_argument('title', nargs='*',
             help = 'The name of the new task list.')
     parser_new.add_argument('-r', '--rename', action='store_true',
             help = 'Set if renaming an already existing task list.')
+    parser_new.set_defaults(func=t.new)
 
     parser_list = subparsers.add_parser('list')
     parser_list.add_argument('-a', '--all', action='store_true',
@@ -379,7 +385,6 @@ class Tasks():
         self.conf = {}
         self.conf['confdir'] = os.path.join(os.path.expanduser('~'), '.tasky/')
         self.conf['keyfile'] = os.path.join(self.conf['confdir'], 'dev_keys')
-        print(self.conf['keyfile'])
         self._authenticate()
 
 
@@ -388,11 +393,11 @@ class Tasks():
         # flow. The Storage object will ensure that if successful the good
         # Credentials will get written back to a file.
         try:
-            # TODO encrypt these
             with open(self.conf['keyfile'], 'r') as keyfile:
                 self._client_id = keyfile.readline()
                 self._client_secret = keyfile.readline()
                 self._api_key = keyfile.readline()
+        # TODO encrypt these
         except IOError:
             # File doesn't exist, so prompt for them
             # and then create the file
@@ -529,24 +534,18 @@ class Tasks():
         # IDToTitle[newTask['id']] = newTask['title']
         # newTask['modified'] = UNCHANGED
 
-def interactiveLoop():
+def interactiveLoop(t):
     # TODO handle certain exceptions like Keyboard
     while True:
         readIn = raw_input("tasks> ")
         args = readIn.split()
-        args = parse_arguments(args)
-        handle_input_args(args)
+        parse_arguments(t, args)
 
 
 if __name__ == '__main__':
-    authenticate()
-    get_data()
-
-    import atexit
-    atexit.register(put_data)
+    t = Tasks()
 
     if len(sys.argv) == 1:
-        interactiveLoop()
+        interactiveLoop(t)
     else:
-        args = parse_arguments(sys.argv[1:])
-        handle_input_args(args)
+        parse_arguments(t, sys.argv[1:])
