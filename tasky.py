@@ -304,7 +304,7 @@ def parse_arguments(t, args):
             "Type tasky <argument> -h for more detailed information."
             )
 
-    subparsers = parser.add_subparsers(dest = 'subcommand')
+    subparsers = parser.add_subparsers(dest = 'subparser')
     parser.add_argument('-l', '--list',
             default = 0,
             help = 'Specifies task list (default: 0)')
@@ -363,21 +363,23 @@ def parse_arguments(t, args):
             help = 'Print all tasks in all task lists.')
     parser_list.add_argument('-s', '--summary', action='store_true',
             help = 'Print a summary of available task lists.')
+    parser_list.set_defaults(func=t.list)
 
     parser_remove = subparsers.add_parser('remove')
     parser_remove.add_argument('index', nargs = '*',
             help = 'Index of the task to remove.')
+    parser_remove.set_defaults(func=t.remove)
 
     parser_toggle = subparsers.add_parser('toggle')
     parser_toggle.add_argument('index', nargs = '*',
             help = 'Index of the task to toggle.')
+    parser_toggle.set_defaults(func=t.toggle)
 
-    # TODO
-    # run func provided by subparser
-    # return t.get_name(t.current_tasklist_id)
 
-    print(vars(parser.parse_args(args)))
-    return parser.parse_args(args)
+    parsed_args = parser.parse_args(args)
+    parsed_args_dict = vars(parsed_args)
+
+    return parsed_args.func(**parsed_args_dict)
 
 class Tasks():
     def __init__(self):
